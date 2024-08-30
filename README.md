@@ -1,2 +1,2 @@
 # TheCannon
-TheCannon customizable webscraper
+TheCannon rental marketplace new listing web scraper

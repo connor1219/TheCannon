@@ -6,9 +6,14 @@ import keyboard
 import os
 import time
 import sqlite3
+
+
 def main():
-    options = ['Run Monitor','Exit']
+    options = ['Run Monitor', 'Edit Webhook URL', 'Exit']
     current_selection = 0
+    f = open("webhookurl.txt", "r")
+    webhookurl = f.read()
+    exit_program = False
     conn = sqlite3.connect('listings.db')
     cursor = conn.cursor()
     cursor.execute('DROP TABLE IF EXISTS listings')
@@ -27,6 +32,7 @@ def main():
 
     def print_menu():
         clear_screen()
+        print("Please set a webhook URL before running the monitor.\n")
         print("Use arrow keys to navigate and Enter to select.\n")
         for index, option in enumerate(options):
             if index == current_selection:
@@ -48,17 +54,18 @@ def main():
         clear_screen()
         print(f'\nYou selected "{options[current_selection]}".')
         if options[current_selection] == 'Exit':
-            # this doesn't even print cause it just clears screen right after
-            print("Work in progress")
+            main.exit_program = True
         elif options[current_selection] == 'Run Monitor':
             monitor()
+        elif options[current_selection] == 'Edit Webhook URL':
+            set_webhook()
         clear_screen()
         print_menu()
 
     def setup_webhook(item):
-        webhook_url = 'https://discord.com/api/webhooks/1235970598992216167/PiAaHRpjxGuu0RmY9XCBh9xGCgbKjy4s9plF5CaFQvZoaXn34PqmPtUTMl58BzC0a5lb'
-        footer_icon_url = 'https://cdn.discordapp.com/attachments/1235970581720072202/1235980692689653872/corndog_white_bg.jpg?ex=66365838&is=663506b8&hm=e9a3b25dd133617cfbf512d46e92991b56bbaa8e06e8743c794fd2fe3eba5618&'
-
+        footer_icon_url = ('https://cdn.discordapp.com/attachments/1235970581720072202/1235980692689653872'
+                           '/corndog_white_bg.jpg?ex=66365838&is=663506b8&hm'
+                           '=e9a3b25dd133617cfbf512d46e92991b56bbaa8e06e8743c794fd2fe3eba5618&')
         image_url = item.find('img')['src']
         address = item.find('h2').find('a').text.strip()
         description = item.find('div', class_='description').text.strip()
@@ -109,7 +116,7 @@ def main():
         }
 
         # Sends webhook
-        response = requests.post(webhook_url, headers=headers, data=json.dumps(data))
+        requests.post(webhookurl, headers=headers, data=json.dumps(data))
 
     def check_and_insert_url(house_listing):
         conn = sqlite3.connect('listings.db')
@@ -156,7 +163,7 @@ def main():
         # Infinitely monitor for listings
         while True:
             print(f"Monitoring... ({i})")
-            i+=1
+            i += 1
             response = requests.get('https://thecannon.ca/housing/')
             soup = BeautifulSoup(response.text, 'html.parser')
             house_listing = soup.find_all('li', class_='housing-item')
@@ -164,6 +171,13 @@ def main():
             # Delay to stop ip bans or flags
             # Speed isn't a major concern given the nature of the scraped site
             time.sleep(30)
+
+    def set_webhook():
+        # fixes bug where enter from selecting carries over to the input
+        input("")
+        main.webhookurl = input("Enter your desired discord webhook URL: ")
+        f = open("webhookurl.txt", "w")
+        f.write(main.webhookurl)
 
     # Create listeners
     keyboard.on_press_key("up", on_arrow_key)
@@ -173,10 +187,11 @@ def main():
     print_menu()
 
     # Start the event loop
-    while True:
+    while exit_program is not True:
         keyboard.wait()
 
     # Close listeners
     keyboard.unhook_all()
+
 
 main()

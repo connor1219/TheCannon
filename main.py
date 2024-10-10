@@ -1,66 +1,14 @@
 import requests
 from bs4 import BeautifulSoup
-import json
 from datetime import datetime
-import keyboard
-import os
 import time
 import sqlite3
+from discord import Embed, SyncWebhook
 
 
 def main():
-    options = ['Run Monitor', 'Edit Webhook URL', 'Exit']
-    current_selection = 0
     f = open("webhookurl.txt", "r")
-    webhookurl = f.read()
-    exit_program = False
-    conn = sqlite3.connect('listings.db')
-    cursor = conn.cursor()
-    cursor.execute('DROP TABLE IF EXISTS listings')
-    cursor.execute('''
-    CREATE TABLE listings (
-        url TEXT PRIMARY KEY,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-    ''')
-    conn.commit()
-    conn.close()
-
-    def clear_screen():
-        # Clear the terminal screen
-        os.system('cls' if os.name == 'nt' else 'clear')
-
-    def print_menu():
-        clear_screen()
-        print("Please set a webhook URL before running the monitor.\n")
-        print("Use arrow keys to navigate and Enter to select.\n")
-        for index, option in enumerate(options):
-            if index == current_selection:
-                print(f"> {option}")  # hover option
-            else:
-                print(f"  {option}")
-
-    def on_arrow_key(event):
-        nonlocal current_selection
-        if event.name == 'up':
-            # Selection up
-            current_selection = (current_selection - 1) % len(options)
-        elif event.name == 'down':
-            # Selection down
-            current_selection = (current_selection + 1) % len(options)
-        print_menu()
-
-    def on_enter(event):
-        clear_screen()
-        print(f'\nYou selected "{options[current_selection]}".')
-        if options[current_selection] == 'Exit':
-            main.exit_program = True
-        elif options[current_selection] == 'Run Monitor':
-            monitor()
-        elif options[current_selection] == 'Edit Webhook URL':
-            set_webhook()
-        clear_screen()
-        print_menu()
+    webhook_url = f.read()
 
     def setup_webhook(item):
         footer_icon_url = ('https://cdn.discordapp.com/attachments/1235970581720072202/1235980692689653872'
@@ -73,50 +21,27 @@ def main():
         date = date_price_combo[0].text.strip()
         price = date_price_combo[2].text.strip()
         listing_url = item.find('h2').find('a')['href']
-        check_and_insert_url(item)
 
-        # Create the payload for the Discord message
-        data = {
-            "embeds": [
-                {
-                    "fields": [
-                        {
-                            "name": "Address",
-                            "value": address,
-                        },
-                        {
-                            "name": "Description",
-                            "value": description
-                        },
-                        {
-                            "name": "Price",
-                            "value": price
-                        },
-                        {
-                            "name": "Date Posted",
-                            "value": date
-                        }
-                    ],
-                    "title": "New Listing Uploaded!",
-                    "description": f"[View Listing]({listing_url})",
-                    "image": {
-                        "url": image_url
-                    },
-                    "footer": {
-                        "text": "Corndog Dev",
-                        "icon_url": footer_icon_url
-                    },
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-            ]
-        }
+        # Create an Embed
+        embed = Embed(
+            title="New Listing Uploaded!",
+            description=f"[View Listing]({listing_url})",
+            timestamp=datetime.utcnow()
+        )
+        embed.add_field(name="Address", value=address, inline=False)
+        embed.add_field(name="Description", value=description, inline=False)
+        embed.add_field(name="Price", value=price, inline=False)
+        embed.add_field(name="Date Posted", value=date, inline=False)
 
-        headers = {
-            "Content-Type": "application/json"
-        }
+        # Set the image and footer
+        embed.set_image(url=image_url)
+        embed.set_footer(text="Corndog Dev", icon_url=footer_icon_url)
 
-        # Sends webhook
-        requests.post(webhookurl, headers=headers, data=json.dumps(data))
+        # Initialize the webhook
+        webhook = SyncWebhook.from_url(webhook_url)
+
+        # Send the embed via the webhook
+        webhook.send(embed=embed)
 
     def check_and_insert_url(house_listing):
         conn = sqlite3.connect('listings.db')
@@ -125,7 +50,6 @@ def main():
         # Iterate through all listings checking if any are not in the database already
         for item in house_listing:
             listing_url = item.find('h2').find('a')['href']
-
             # Check if the URL already exists in the database
             cursor.execute('SELECT url FROM listings WHERE url = ?', (listing_url,))
             exists = cursor.fetchone()
@@ -139,10 +63,18 @@ def main():
         conn.close()
 
     def init_database(house_listing):
-        # Fills database with all current listings
+        # Creates / Purges and then Fills database with all current listings
         # to avoid discord webhook spam on startup
         conn = sqlite3.connect('listings.db')
         cursor = conn.cursor()
+        cursor.execute('DROP TABLE IF EXISTS listings')
+        cursor.execute('''
+            CREATE TABLE listings (
+                url TEXT PRIMARY KEY,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+            ''')
+        conn.commit()
         for item in house_listing:
             listing_url = item.find('h2').find('a')['href']
             cursor.execute('INSERT INTO listings (url) VALUES (?)', (listing_url,))
@@ -158,12 +90,12 @@ def main():
         house_listing = soup.find_all('li', class_='housing-item')
         # Set up DB
         init_database(house_listing)
-        i = 0
+        counter = 0
 
         # Infinitely monitor for listings
         while True:
-            print(f"Monitoring... ({i})")
-            i += 1
+            print(f"Monitoring... ({counter})")
+            counter += 1
             response = requests.get('https://thecannon.ca/housing/')
             soup = BeautifulSoup(response.text, 'html.parser')
             house_listing = soup.find_all('li', class_='housing-item')
@@ -172,26 +104,14 @@ def main():
             # Speed isn't a major concern given the nature of the scraped site
             time.sleep(30)
 
-    def set_webhook():
-        # fixes bug where enter from selecting carries over to the input
-        input("")
-        main.webhookurl = input("Enter your desired discord webhook URL: ")
-        f = open("webhookurl.txt", "w")
-        f.write(main.webhookurl)
+    # def set_webhook():
+    #    # fixes bug where enter from selecting carries over to the input
+    #    input("")
+    #    main.webhookurl = input("Enter your desired discord webhook URL: ")
+    #    f = open("webhookurl.txt", "w")
+    #    f.write(main.webhookurl)
 
-    # Create listeners
-    keyboard.on_press_key("up", on_arrow_key)
-    keyboard.on_press_key("down", on_arrow_key)
-    keyboard.on_press_key("enter", on_enter, suppress=True)
-
-    print_menu()
-
-    # Start the event loop
-    while exit_program is not True:
-        keyboard.wait()
-
-    # Close listeners
-    keyboard.unhook_all()
+    monitor()
 
 
 main()
